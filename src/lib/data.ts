@@ -104,3 +104,8 @@ export function fmt(v: number) {
   if (!v) return '–'
   return '$' + Math.round(v).toLocaleString()
 }
+export function fmtPct(v: number | null) {
+  if (v === null) return '–'
+  const sign = v >= 0 ? '+' : ''
+  return sign + v.toFixed(1) + '%'
+}
