@@ -102,7 +102,8 @@ export function pctChange(curr: number, prev: number): number | null {
 }
 export function fmt(v: number) {
   if (!v) return '–'
-  return '$' + Math.round(v).toLocaleString()
+  return '$' + v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})
+}
 }
 export function fmtPct(v: number | null) {
   if (v === null) return '–'
