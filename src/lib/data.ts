@@ -101,14 +101,11 @@ export function pctChange(curr: number, prev: number): number | null {
   return ((curr - prev) / prev) * 100
 }
 export function fmt(v: number) {
-  if (!v) return '–'
-  export function fmt(v: number) {
-  if (!v) return '–'
+  if (!v) return '-'
   return '$' + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 }
-}
 export function fmtPct(v: number | null) {
-  if (v === null) return '–'
+  if (v === null) return '-'
   const sign = v >= 0 ? '+' : ''
   return sign + v.toFixed(1) + '%'
 }
