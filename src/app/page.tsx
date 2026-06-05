@@ -275,7 +275,7 @@ export default function Home() {
   const yearOR = getYearORTotal(data, year)
   const yearRenewal = getYearRenewalTotal(data, year)
   const yearProd = getYearProdTotal(data, year)
-  const MONTHS.reduce((s,_,i) => s + getMonthOR(data,year,i) + ((data.renewal[year]||[])[i]||0), 0) = yearOR + yearRenewal
+  const yearGrand = yearOR + yearRenewal
   const prevYear = year - 1
   const prevYearExists = YEARS.includes(prevYear)
 
@@ -289,7 +289,7 @@ export default function Home() {
 
   const yearExpenses = data.expenses?.[year] || emptyYearExpenses()
   const yearTotalExpenses = sum(yearExpenses.map(e => getMonthTotalExpenses(e)))
-  const yearNetIncome = MONTHS.reduce((s,_,i) => s + getMonthOR(data,year,i) + ((data.renewal[year]||[])[i]||0), 0) - yearTotalExpenses
+  const yearNetIncome = yearGrand - yearTotalExpenses
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: '24px 16px' }}>
@@ -319,7 +319,7 @@ export default function Home() {
           <MetricCard label="Total production" value={fmt(yearProd)} sub={'All agents ' + year} />
           <MetricCard label="Your overriding" value={fmt(yearOR)} sub={yearProd > 0 ? ((yearOR/yearProd)*100).toFixed(1) + '% of production' : undefined} />
           <MetricCard label="Renewal income" value={fmt(yearRenewal)} sub="Year total" />
-          <MetricCard label="Grand total" value={fmt(MONTHS.reduce((s,_,i) => s + getMonthOR(data,year,i) + ((data.renewal[year]||[])[i]||0), 0))} sub="OR + Renewal" highlight />
+          <MetricCard label="Grand total" value={fmt(yearGrand)} sub="OR + Renewal" highlight />
           <MetricCard label="Total expenses" value={fmt(yearTotalExpenses)} sub="Year total" negative />
           <MetricCard label="Net income" value={fmt(yearNetIncome)} sub="After expenses" highlight={yearNetIncome > 0} negative={yearNetIncome < 0} />
           {prevYearExists && (
@@ -429,7 +429,7 @@ export default function Home() {
                 </tr>
                 <tr style={{ background: 'var(--accent-light)', borderBottom: '1px solid var(--border)' }}>
                   <td colSpan={3} style={{ padding: '10px 14px', fontWeight: 700, color: 'var(--accent)' }}>Grand total (OR + Renewal)</td>
-                  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--accent)', fontSize: 15 }}>{fmt(MONTHS.reduce((s,_,i) => s + getMonthOR(data,year,i) + ((data.renewal[year]||[])[i]||0), 0))}</td>
+                  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--accent)', fontSize: 15 }}>{fmt(yearGrand)}</td>
                 </tr>
                 <tr style={{ background: 'var(--red-light)', borderBottom: '1px solid var(--border)' }}>
                   <td colSpan={3} style={{ padding: '10px 14px', fontWeight: 700, color: 'var(--red)' }}>Total expenses</td>
@@ -480,6 +480,9 @@ function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVari
   const totalExp = fixedTotal + variableTotal
   const monthIncome = getMonthOR(data, year, month) + ((data.renewal[year] || [])[month] || 0)
   const netIncome = monthIncome - totalExp
+  const annualIncome = MONTHS.reduce((s,_,i) => s + getMonthOR(data,year,i) + ((data.renewal[year]||[])[i]||0), 0)
+  const annualExpenses = sum(yearExp.map(e => getMonthTotalExpenses(e)))
+  const annualNet = annualIncome - annualExpenses
 
   const inputStyle = {
     width: '130px', textAlign: 'right' as const, padding: '5px 8px',
@@ -489,7 +492,6 @@ function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVari
 
   return (
     <div>
-      {/* Month selector */}
       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 20 }}>
         {MONTHS.map((m, i) => (
           <button key={m} onClick={() => setMonth(i)} style={{ padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer', border: i === month ? '1px solid var(--accent)' : '1px solid var(--border)', background: i === month ? 'var(--accent-light)' : 'var(--surface)', color: i === month ? 'var(--accent)' : 'var(--muted)' }}>
@@ -498,7 +500,6 @@ function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVari
         ))}
       </div>
 
-      {/* Month summary cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 20 }}>
         <MetricCard label={MONTHS[month] + ' income'} value={fmt(monthIncome)} sub="OR + Renewal" highlight />
         <MetricCard label="Fixed expenses" value={fmt(fixedTotal)} sub={MONTHS[month]} negative />
@@ -508,8 +509,6 @@ function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVari
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-
-        {/* Fixed expenses */}
         <div>
           <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 10 }}>Fixed expenses</p>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
@@ -525,16 +524,14 @@ function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVari
                   <tr key={item} style={{ borderBottom: '1px solid var(--border)', background: idx % 2 === 0 ? 'var(--surface)' : 'var(--surface2)' }}>
                     <td style={{ padding: '8px 14px', fontWeight: 500 }}>{item}</td>
                     <td style={{ padding: '4px 14px', textAlign: 'right' }}>
-                      <input
-                        type="number" min={0} step={0.01}
+                      <input type="number" min={0} step={0.01}
                         defaultValue={monthExp.fixed[item] || ''}
                         placeholder="0"
                         key={year + '-' + month + '-fixed-' + item}
                         onChange={e => onUpdateFixed(month, item, e.target.value)}
                         style={inputStyle}
                         onFocus={e => e.target.style.borderColor = 'var(--accent)'}
-                        onBlur={e => e.target.style.borderColor = 'var(--border)'}
-                      />
+                        onBlur={e => e.target.style.borderColor = 'var(--border)'} />
                     </td>
                   </tr>
                 ))}
@@ -547,7 +544,6 @@ function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVari
           </div>
         </div>
 
-        {/* Variable expenses */}
         <div>
           <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 10 }}>Variable expenses</p>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', marginBottom: 10 }}>
@@ -561,27 +557,23 @@ function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVari
               </thead>
               <tbody>
                 {Object.keys(monthExp.variable).length === 0 && (
-                  <tr>
-                    <td colSpan={3} style={{ padding: '16px 14px', textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>No variable expenses yet — add one below</td>
-                  </tr>
+                  <tr><td colSpan={3} style={{ padding: '16px 14px', textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>No variable expenses yet</td></tr>
                 )}
                 {Object.entries(monthExp.variable).map(([key, val], idx) => (
                   <tr key={key} style={{ borderBottom: '1px solid var(--border)', background: idx % 2 === 0 ? 'var(--surface)' : 'var(--surface2)' }}>
                     <td style={{ padding: '8px 14px', fontWeight: 500 }}>{key}</td>
                     <td style={{ padding: '4px 14px', textAlign: 'right' }}>
-                      <input
-                        type="number" min={0} step={0.01}
+                      <input type="number" min={0} step={0.01}
                         defaultValue={val || ''}
                         placeholder="0"
                         key={year + '-' + month + '-var-' + key}
                         onChange={e => onUpdateVariable(month, key, e.target.value)}
                         style={inputStyle}
                         onFocus={e => e.target.style.borderColor = 'var(--accent)'}
-                        onBlur={e => e.target.style.borderColor = 'var(--border)'}
-                      />
+                        onBlur={e => e.target.style.borderColor = 'var(--border)'} />
                     </td>
                     <td style={{ padding: '8px 8px', textAlign: 'center' }}>
-                      <button onClick={() => onRemoveVariable(month, key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 16, lineHeight: 1 }}>×</button>
+                      <button onClick={() => onRemoveVariable(month, key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 16 }}>x</button>
                     </td>
                   </tr>
                 ))}
@@ -593,27 +585,19 @@ function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVari
               </tbody>
             </table>
           </div>
-          {/* Add variable item */}
           <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              type="text"
-              value={newItem}
-              onChange={e => setNewItem(e.target.value)}
+            <input type="text" value={newItem} onChange={e => setNewItem(e.target.value)}
               placeholder="Add variable expense..."
               onKeyDown={e => { if (e.key === 'Enter') { onAddVariable(month, newItem); setNewItem('') } }}
-              style={{ flex: 1, padding: '7px 10px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--surface)', color: 'var(--text)', fontSize: 13, outline: 'none' }}
-            />
-            <button
-              onClick={() => { onAddVariable(month, newItem); setNewItem('') }}
-              style={{ padding: '7px 16px', borderRadius: 6, border: '1px solid var(--accent)', background: 'var(--accent)', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
-            >
+              style={{ flex: 1, padding: '7px 10px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--surface)', color: 'var(--text)', fontSize: 13, outline: 'none' }} />
+            <button onClick={() => { onAddVariable(month, newItem); setNewItem('') }}
+              style={{ padding: '7px 16px', borderRadius: 6, border: '1px solid var(--accent)', background: 'var(--accent)', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
               Add
             </button>
           </div>
         </div>
       </div>
 
-      {/* Annual expenses summary */}
       <div style={{ marginTop: 24 }}>
         <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 10 }}>Annual expenses summary</p>
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
@@ -647,14 +631,14 @@ function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVari
                   </tr>
                 )
               })}
-           <tr style={{ background: 'var(--surface2)', borderTop: '2px solid var(--border)' }}>
-  <td style={{ padding: '10px 14px', fontWeight: 700 }}>Year total</td>
-  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700 }}>{fmt(MONTHS.reduce((s,_,i) => s + getMonthOR(data,year,i) + ((data.renewal[year]||[])[i]||0), 0))}</td>
-  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--red)' }}>{fmt(sum(yearExp.map(e => getMonthFixedTotal(e))))}</td>
-  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--red)' }}>{fmt(sum(yearExp.map(e => getMonthVariableTotal(e))))}</td>
-  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--red)' }}>{fmt(sum(yearExp.map(e => getMonthTotalExpenses(e))))}</td>
-  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: MONTHS.reduce((s,_,i) => s + getMonthOR(data,year,i) + ((data.renewal[year]||[])[i]||0), 0) - sum(yearExp.map(e => getMonthTotalExpenses(e))) >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt(MONTHS.reduce((s,_,i) => s + getMonthOR(data,year,i) + ((data.renewal[year]||[])[i]||0), 0) - sum(yearExp.map(e => getMonthTotalExpenses(e))))}</td>
-</tr>
+              <tr style={{ background: 'var(--surface2)', borderTop: '2px solid var(--border)' }}>
+                <td style={{ padding: '10px 14px', fontWeight: 700 }}>Year total</td>
+                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700 }}>{fmt(annualIncome)}</td>
+                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--red)' }}>{fmt(sum(yearExp.map(e => getMonthFixedTotal(e))))}</td>
+                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--red)' }}>{fmt(sum(yearExp.map(e => getMonthVariableTotal(e))))}</td>
+                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--red)' }}>{fmt(annualExpenses)}</td>
+                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: annualNet >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt(annualNet)}</td>
+              </tr>
             </tbody>
           </table>
         </div>
