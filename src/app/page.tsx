@@ -30,6 +30,10 @@ const FIXED_ITEMS = [
   "Jacelyn Salary",
   "Cynyin's Salary",
   "Jacelyn's CPF",
+  "StandChart CC repayment",
+  "Monthly Family Food Expense",
+  "BoxxPark",
+  "Silversea Maint. Fee",
 ]
 
 const EXPENSE_CATEGORIES = [
