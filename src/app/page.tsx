@@ -12,6 +12,7 @@ interface AllData {
   prod: Record<number, YearData>
   renewal: Record<number, RenewalData>
   expenses?: Record<number, MonthlyExpenses[]>
+  expenseCategories?: Record<number, Record<string, string>>
 }
 
 interface MonthlyExpenses {
@@ -30,6 +31,23 @@ const FIXED_ITEMS = [
   "Cynyin's Salary",
   "Jacelyn's CPF",
 ]
+
+const EXPENSE_CATEGORIES = [
+  'Recruitment',
+  'Servicing',
+  'Seminar Selling',
+  'TLDR',
+  'Personal Expenses',
+]
+
+const CATEGORY_COLORS: Record<string, string> = {
+  'Recruitment':       '#1a6b4a',
+  'Servicing':         '#2563eb',
+  'Seminar Selling':   '#d97706',
+  'TLDR':              '#7c3aed',
+  'Personal Expenses': '#dc2626',
+  'Uncategorised':     '#9ca3af',
+}
 
 function emptyMonthlyExpenses(): MonthlyExpenses {
   const fixed: Record<string, number> = {}
@@ -59,6 +77,7 @@ function deepCloneSeed(): AllData {
   const prod: Record<number, YearData> = {}
   const renewal: Record<number, RenewalData> = {}
   const expenses: Record<number, MonthlyExpenses[]> = {}
+  const expenseCategories: Record<number, Record<string, string>> = {}
   for (const y of YEARS) {
     prod[y] = {}
     for (const a of AGENTS[y]) {
@@ -66,8 +85,9 @@ function deepCloneSeed(): AllData {
     }
     renewal[y] = [...SEED_RENEWAL[y]]
     expenses[y] = emptyYearExpenses()
+    expenseCategories[y] = {}
   }
-  return { prod, renewal, expenses }
+  return { prod, renewal, expenses, expenseCategories }
 }
 
 function getAgentProdTotal(data: AllData, year: number, name: string, months?: number): number {
@@ -109,9 +129,7 @@ function getActiveMonths(data: AllData, year: number): number {
 }
 
 function getMonthTotalExpenses(exp: MonthlyExpenses): number {
-  const f = sum(Object.values(exp.fixed))
-  const v = sum(Object.values(exp.variable))
-  return f + v
+  return sum(Object.values(exp.fixed)) + sum(Object.values(exp.variable))
 }
 
 function getMonthFixedTotal(exp: MonthlyExpenses): number {
@@ -120,6 +138,25 @@ function getMonthFixedTotal(exp: MonthlyExpenses): number {
 
 function getMonthVariableTotal(exp: MonthlyExpenses): number {
   return sum(Object.values(exp.variable))
+}
+
+function getCategoryTotals(data: AllData, year: number): Record<string, number> {
+  const totals: Record<string, number> = {}
+  EXPENSE_CATEGORIES.forEach(c => { totals[c] = 0 })
+  totals['Uncategorised'] = 0
+  const yearExp = data.expenses?.[year] || emptyYearExpenses()
+  const cats = data.expenseCategories?.[year] || {}
+  yearExp.forEach(monthExp => {
+    Object.entries(monthExp.fixed).forEach(([key, val]) => {
+      const cat = cats[key] || 'Uncategorised'
+      totals[cat] = (totals[cat] || 0) + (val || 0)
+    })
+    Object.entries(monthExp.variable).forEach(([key, val]) => {
+      const cat = cats[key] || 'Uncategorised'
+      totals[cat] = (totals[cat] || 0) + (val || 0)
+    })
+  })
+  return totals
 }
 
 function Badge({ value }: { value: number | null }) {
@@ -149,11 +186,62 @@ function MetricCard({ label, value, sub, highlight, negative }: { label: string;
     </div>
   )
 }
+
+function PieChart({ data: chartData }: { data: Record<string, number> }) {
+  const total = sum(Object.values(chartData))
+  if (total === 0) return <div style={{ textAlign: 'center', color: 'var(--muted)', padding: '40px', fontSize: 13 }}>No expense data yet</div>
+
+  let cumAngle = -Math.PI / 2
+  const segments = Object.entries(chartData)
+    .filter(([, v]) => v > 0)
+    .map(([label, value]) => {
+      const angle = (value / total) * 2 * Math.PI
+      const x1 = 150 + 120 * Math.cos(cumAngle)
+      const y1 = 150 + 120 * Math.sin(cumAngle)
+      cumAngle += angle
+      const x2 = 150 + 120 * Math.cos(cumAngle)
+      const y2 = 150 + 120 * Math.sin(cumAngle)
+      const largeArc = angle > Math.PI ? 1 : 0
+      const midAngle = cumAngle - angle / 2
+      const lx = 150 + 145 * Math.cos(midAngle)
+      const ly = 150 + 145 * Math.sin(midAngle)
+      return { label, value, x1, y1, x2, y2, largeArc, lx, ly, pct: (value / total * 100).toFixed(1) }
+    })
+
+  return (
+    <div style={{ display: 'flex', gap: 32, alignItems: 'center', flexWrap: 'wrap' }}>
+      <svg viewBox="0 0 300 300" style={{ width: 220, height: 220, flexShrink: 0 }}>
+        {segments.map((s, i) => (
+          <path key={i}
+            d={`M 150 150 L ${s.x1} ${s.y1} A 120 120 0 ${s.largeArc} 1 ${s.x2} ${s.y2} Z`}
+            fill={CATEGORY_COLORS[s.label] || '#9ca3af'}
+            stroke="#fff" strokeWidth="2"
+          />
+        ))}
+        <circle cx="150" cy="150" r="55" fill="white" />
+        <text x="150" y="145" textAnchor="middle" style={{ fontSize: 11, fill: '#6b6860' }}>Total</text>
+        <text x="150" y="163" textAnchor="middle" style={{ fontSize: 12, fontWeight: 600, fill: '#1a1917' }}>{fmt(total)}</text>
+      </svg>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {segments.map((s, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 12, height: 12, borderRadius: 3, background: CATEGORY_COLORS[s.label] || '#9ca3af', flexShrink: 0 }} />
+            <div style={{ fontSize: 13 }}>
+              <span style={{ fontWeight: 500 }}>{s.label}</span>
+              <span style={{ color: 'var(--muted)', marginLeft: 8 }}>{fmt(s.value)} ({s.pct}%)</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function Home() {
   const [data, setData] = useState<AllData | null>(null)
   const [year, setYear] = useState(2026)
   const [month, setMonth] = useState(0)
-  const [view, setView] = useState<'month' | 'annual' | 'yoy' | 'performance' | 'expenses'>('month')
+  const [view, setView] = useState<'month' | 'annual' | 'yoy' | 'performance' | 'expenses' | 'categories'>('month')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -170,6 +258,7 @@ export default function Home() {
           }
           if (d.renewal[y]) merged.renewal[y] = d.renewal[y]
           if (d.expenses?.[y]) merged.expenses![y] = d.expenses[y]
+          if (d.expenseCategories?.[y]) merged.expenseCategories![y] = d.expenseCategories[y]
         }
         setData(merged)
       } else {
@@ -262,6 +351,21 @@ export default function Home() {
     })
   }
 
+  function updateCategory(key: string, cat: string) {
+    setData(prev => {
+      if (!prev) return prev
+      const next: AllData = {
+        ...prev,
+        expenseCategories: {
+          ...prev.expenseCategories,
+          [year]: { ...(prev.expenseCategories?.[year] || {}), [key]: cat }
+        }
+      }
+      triggerSave(next)
+      return next
+    })
+  }
+
   if (loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ color: 'var(--muted)' }}>Loading...</div>
@@ -332,9 +436,9 @@ export default function Home() {
         </div>
 
         <div style={{ display: 'flex', gap: 4, marginBottom: 16, background: 'var(--surface2)', borderRadius: 8, padding: 4, width: 'fit-content', flexWrap: 'wrap' }}>
-          {(['month', 'annual', 'yoy', 'performance', 'expenses'] as const).map(v => (
+          {(['month', 'annual', 'yoy', 'performance', 'expenses', 'categories'] as const).map(v => (
             <button key={v} onClick={() => setView(v)} style={{ padding: '5px 14px', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer', border: 'none', background: view === v ? 'var(--surface)' : 'transparent', color: view === v ? 'var(--text)' : 'var(--muted)' }}>
-              {v === 'month' ? 'Monthly input' : v === 'annual' ? 'Annual summary' : v === 'yoy' ? 'Year-on-year' : v === 'performance' ? 'Performance' : 'Expenses'}
+              {v === 'month' ? 'Monthly input' : v === 'annual' ? 'Annual summary' : v === 'yoy' ? 'Year-on-year' : v === 'performance' ? 'Performance' : v === 'expenses' ? 'Expenses' : 'Categories'}
             </button>
           ))}
         </div>
@@ -448,20 +552,152 @@ export default function Home() {
         {view === 'performance' && <PerformanceView data={data} />}
         {view === 'expenses' && (
           <ExpensesView
-            data={data}
-            year={year}
-            month={month}
-            setMonth={setMonth}
-            onUpdateFixed={updateFixedExpense}
-            onUpdateVariable={updateVariableExpense}
-            onAddVariable={addVariableItem}
-            onRemoveVariable={removeVariableItem}
+            data={data} year={year} month={month} setMonth={setMonth}
+            onUpdateFixed={updateFixedExpense} onUpdateVariable={updateVariableExpense}
+            onAddVariable={addVariableItem} onRemoveVariable={removeVariableItem}
           />
+        )}
+        {view === 'categories' && (
+          <CategoriesView data={data} year={year} onUpdateCategory={updateCategory} />
         )}
       </div>
     </div>
   )
 }
+
+function CategoriesView({ data, year, onUpdateCategory }: {
+  data: AllData
+  year: number
+  onUpdateCategory: (key: string, cat: string) => void
+}) {
+  const cats = data.expenseCategories?.[year] || {}
+  const yearExp = data.expenses?.[year] || emptyYearExpenses()
+  const catTotals = getCategoryTotals(data, year)
+
+  // Collect all unique expense keys
+  const allFixedKeys = FIXED_ITEMS
+  const allVariableKeys = Array.from(new Set(
+    yearExp.flatMap(m => Object.keys(m.variable))
+  ))
+
+  const selectStyle = {
+    padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)',
+    background: 'var(--surface)', color: 'var(--text)', fontSize: 12, outline: 'none', cursor: 'pointer'
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+      {/* Category assignment table */}
+      <div>
+        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>Assign expenses to categories</p>
+        <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>Categories apply across all months for {year}</p>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: 'var(--surface2)' }}>
+                <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Expense item</th>
+                <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Type</th>
+                <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Year total</th>
+                <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Category</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allFixedKeys.map((key, idx) => {
+                const total = sum(yearExp.map(m => m.fixed[key] || 0))
+                return (
+                  <tr key={key} style={{ borderBottom: '1px solid var(--border)', background: idx % 2 === 0 ? 'var(--surface)' : 'var(--surface2)' }}>
+                    <td style={{ padding: '8px 14px', fontWeight: 500 }}>{key}</td>
+                    <td style={{ padding: '8px 14px', fontSize: 12, color: 'var(--muted)' }}>Fixed</td>
+                    <td style={{ padding: '8px 14px', textAlign: 'right' }}>{total > 0 ? fmt(total) : '-'}</td>
+                    <td style={{ padding: '8px 14px' }}>
+                      <select
+                        value={cats[key] || ''}
+                        onChange={e => onUpdateCategory(key, e.target.value)}
+                        style={selectStyle}
+                      >
+                        <option value="">Uncategorised</option>
+                        {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </td>
+                  </tr>
+                )
+              })}
+              {allVariableKeys.map((key, idx) => {
+                const total = sum(yearExp.map(m => m.variable[key] || 0))
+                return (
+                  <tr key={key} style={{ borderBottom: '1px solid var(--border)', background: (idx + allFixedKeys.length) % 2 === 0 ? 'var(--surface)' : 'var(--surface2)' }}>
+                    <td style={{ padding: '8px 14px', fontWeight: 500 }}>{key}</td>
+                    <td style={{ padding: '8px 14px', fontSize: 12, color: 'var(--muted)' }}>Variable</td>
+                    <td style={{ padding: '8px 14px', textAlign: 'right' }}>{total > 0 ? fmt(total) : '-'}</td>
+                    <td style={{ padding: '8px 14px' }}>
+                      <select
+                        value={cats[key] || ''}
+                        onChange={e => onUpdateCategory(key, e.target.value)}
+                        style={selectStyle}
+                      >
+                        <option value="">Uncategorised</option>
+                        {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Category breakdown table */}
+      <div>
+        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>Category breakdown — {year}</p>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', marginBottom: 24 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: 'var(--surface2)' }}>
+                <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Category</th>
+                <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Total</th>
+                <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>% of expenses</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...EXPENSE_CATEGORIES, 'Uncategorised'].map((cat, idx) => {
+                const val = catTotals[cat] || 0
+                const total = sum(Object.values(catTotals))
+                const pct = total > 0 ? (val / total * 100).toFixed(1) : '0.0'
+                if (val === 0) return null
+                return (
+                  <tr key={cat} style={{ borderBottom: '1px solid var(--border)', background: idx % 2 === 0 ? 'var(--surface)' : 'var(--surface2)' }}>
+                    <td style={{ padding: '10px 14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ width: 10, height: 10, borderRadius: 2, background: CATEGORY_COLORS[cat] || '#9ca3af' }} />
+                        <span style={{ fontWeight: 500 }}>{cat}</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 500 }}>{fmt(val)}</td>
+                    <td style={{ padding: '10px 14px', textAlign: 'right', color: 'var(--muted)' }}>{pct}%</td>
+                  </tr>
+                )
+              })}
+              <tr style={{ background: 'var(--surface2)', borderTop: '2px solid var(--border)' }}>
+                <td style={{ padding: '10px 14px', fontWeight: 700 }}>Total</td>
+                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700 }}>{fmt(sum(Object.values(catTotals)))}</td>
+                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700 }}>100%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pie chart */}
+        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>Expense distribution</p>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '24px' }}>
+          <PieChart data={catTotals} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVariable, onAddVariable, onRemoveVariable }: {
   data: AllData
   year: number
