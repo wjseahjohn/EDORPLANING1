@@ -147,10 +147,6 @@ function getCategoryTotals(data: AllData, year: number): Record<string, number> 
   const yearExp = data.expenses?.[year] || emptyYearExpenses()
   const cats = data.expenseCategories?.[year] || {}
   yearExp.forEach(monthExp => {
-    Object.entries(monthExp.fixed).forEach(([key, val]) => {
-      const cat = cats[key] || 'Uncategorised'
-      totals[cat] = (totals[cat] || 0) + (val || 0)
-    })
     Object.entries(monthExp.variable).forEach(([key, val]) => {
       const cat = cats[key] || 'Uncategorised'
       totals[cat] = (totals[cat] || 0) + (val || 0)
@@ -241,7 +237,7 @@ export default function Home() {
   const [data, setData] = useState<AllData | null>(null)
   const [year, setYear] = useState(2026)
   const [month, setMonth] = useState(0)
-  const [view, setView] = useState<'month' | 'annual' | 'yoy' | 'performance' | 'expenses' | 'categories'>('month')
+  const [view, setView] = useState<'month' | 'annual' | 'yoy' | 'performance' | 'expenses'>('month')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -436,9 +432,9 @@ export default function Home() {
         </div>
 
         <div style={{ display: 'flex', gap: 4, marginBottom: 16, background: 'var(--surface2)', borderRadius: 8, padding: 4, width: 'fit-content', flexWrap: 'wrap' }}>
-          {(['month', 'annual', 'yoy', 'performance', 'expenses', 'categories'] as const).map(v => (
+          {(['month', 'annual', 'yoy', 'performance', 'expenses'] as const).map(v => (
             <button key={v} onClick={() => setView(v)} style={{ padding: '5px 14px', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer', border: 'none', background: view === v ? 'var(--surface)' : 'transparent', color: view === v ? 'var(--text)' : 'var(--muted)' }}>
-              {v === 'month' ? 'Monthly input' : v === 'annual' ? 'Annual summary' : v === 'yoy' ? 'Year-on-year' : v === 'performance' ? 'Performance' : v === 'expenses' ? 'Expenses' : 'Categories'}
+              {v === 'month' ? 'Monthly input' : v === 'annual' ? 'Annual summary' : v === 'yoy' ? 'Year-on-year' : v === 'performance' ? 'Performance' : 'Expenses'}
             </button>
           ))}
         </div>
@@ -555,11 +551,10 @@ export default function Home() {
             data={data} year={year} month={month} setMonth={setMonth}
             onUpdateFixed={updateFixedExpense} onUpdateVariable={updateVariableExpense}
             onAddVariable={addVariableItem} onRemoveVariable={removeVariableItem}
+            onUpdateCategory={(m, key, cat) => updateCategory(key, cat)}
           />
         )}
-        {view === 'categories' && (
-          <CategoriesView data={data} year={year} onUpdateCategory={updateCategory} />
-        )}
+
       </div>
     </div>
   )
@@ -698,7 +693,7 @@ function CategoriesView({ data, year, onUpdateCategory }: {
   )
 }
 
-function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVariable, onAddVariable, onRemoveVariable }: {
+function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVariable, onAddVariable, onRemoveVariable, onUpdateCategory }: {
   data: AllData
   year: number
   month: number
@@ -707,6 +702,7 @@ function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVari
   onUpdateVariable: (m: number, key: string, val: string) => void
   onAddVariable: (m: number, name: string) => void
   onRemoveVariable: (m: number, key: string) => void
+  onUpdateCategory: (m: number, key: string, cat: string) => void
 }) {
   const [newItem, setNewItem] = useState('')
   const yearExp = data.expenses?.[year] || emptyYearExpenses()
@@ -787,17 +783,28 @@ function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVari
               <thead>
                 <tr style={{ background: 'var(--surface2)' }}>
                   <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Item</th>
+                  <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Category</th>
                   <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Amount</th>
                   <th style={{ padding: '10px 14px', width: 36, borderBottom: '1px solid var(--border)' }}></th>
                 </tr>
               </thead>
               <tbody>
                 {Object.keys(monthExp.variable).length === 0 && (
-                  <tr><td colSpan={3} style={{ padding: '16px 14px', textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>No variable expenses yet</td></tr>
+                  <tr><td colSpan={4} style={{ padding: '16px 14px', textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>No variable expenses yet</td></tr>
                 )}
                 {Object.entries(monthExp.variable).map(([key, val], idx) => (
                   <tr key={key} style={{ borderBottom: '1px solid var(--border)', background: idx % 2 === 0 ? 'var(--surface)' : 'var(--surface2)' }}>
                     <td style={{ padding: '8px 14px', fontWeight: 500 }}>{key}</td>
+                    <td style={{ padding: '4px 14px' }}>
+                      <select
+                        value={(data.expenseCategories?.[year] || {})[key] || ''}
+                        onChange={e => onUpdateCategory(month, key, e.target.value)}
+                        style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontSize: 12, outline: 'none', cursor: 'pointer', width: '100%' }}
+                      >
+                        <option value="">Uncategorised</option>
+                        {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </td>
                     <td style={{ padding: '4px 14px', textAlign: 'right' }}>
                       <input type="number" min={0} step={0.01}
                         defaultValue={val || ''}
@@ -814,7 +821,7 @@ function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVari
                   </tr>
                 ))}
                 <tr style={{ background: 'var(--red-light)' }}>
-                  <td style={{ padding: '10px 14px', fontWeight: 700, color: 'var(--red)' }}>Total variable</td>
+                  <td colSpan={2} style={{ padding: '10px 14px', fontWeight: 700, color: 'var(--red)' }}>Total variable</td>
                   <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--red)' }}>{fmt(variableTotal)}</td>
                   <td></td>
                 </tr>
@@ -877,6 +884,53 @@ function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVari
               </tr>
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 24 }}>
+        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>Variable expense categories — {year}</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: 'var(--surface2)' }}>
+                  <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Category</th>
+                  <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Total</th>
+                  <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>%</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const catTotals = getCategoryTotals(data, year)
+                  const total = sum(Object.values(catTotals))
+                  return [...EXPENSE_CATEGORIES, 'Uncategorised'].map((cat, idx) => {
+                    const val = catTotals[cat] || 0
+                    if (val === 0) return null
+                    return (
+                      <tr key={cat} style={{ borderBottom: '1px solid var(--border)', background: idx % 2 === 0 ? 'var(--surface)' : 'var(--surface2)' }}>
+                        <td style={{ padding: '9px 14px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ width: 10, height: 10, borderRadius: 2, background: CATEGORY_COLORS[cat] || '#9ca3af' }} />
+                            <span style={{ fontWeight: 500 }}>{cat}</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '9px 14px', textAlign: 'right' }}>{fmt(val)}</td>
+                        <td style={{ padding: '9px 14px', textAlign: 'right', color: 'var(--muted)' }}>{total > 0 ? (val/total*100).toFixed(1) : '0.0'}%</td>
+                      </tr>
+                    )
+                  })
+                })()}
+                <tr style={{ background: 'var(--surface2)', borderTop: '2px solid var(--border)' }}>
+                  <td style={{ padding: '10px 14px', fontWeight: 700 }}>Total</td>
+                  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700 }}>{fmt(sum(Object.values(getCategoryTotals(data, year))))}</td>
+                  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700 }}>100%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '20px' }}>
+            <PieChart data={getCategoryTotals(data, year)} />
+          </div>
         </div>
       </div>
     </div>
