@@ -649,7 +649,7 @@ function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVari
               })}
               <tr style={{ background: 'var(--surface2)', borderTop: '2px solid var(--border)' }}>
                 <td style={{ padding: '10px 14px', fontWeight: 700 }}>Year total</td>
-                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700 }}>{fmt(yearGrand)}</td>
+               <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700 }}>{fmt(MONTHS.reduce((s,_,i) => s + getMonthOR(data,year,i) + ((data.renewal[year]||[])[i]||0), 0))}</td>
                 <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--red)' }}>{fmt(sum(yearExp.map(e => getMonthFixedTotal(e))))}</td>
                 <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--red)' }}>{fmt(sum(yearExp.map(e => getMonthVariableTotal(e))))}</td>
                 <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--red)' }}>{fmt(yearTotalExpenses)}</td>
