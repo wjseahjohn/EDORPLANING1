@@ -13,6 +13,7 @@ interface AllData {
   renewal: Record<number, RenewalData>
   expenses?: Record<number, MonthlyExpenses[]>
   expenseCategories?: Record<number, Record<string, string>>
+  hiddenFixed?: Record<number, string[]>
 }
 
 interface MonthlyExpenses {
@@ -82,6 +83,7 @@ function deepCloneSeed(): AllData {
   const renewal: Record<number, RenewalData> = {}
   const expenses: Record<number, MonthlyExpenses[]> = {}
   const expenseCategories: Record<number, Record<string, string>> = {}
+  const hiddenFixed: Record<number, string[]> = {}
   for (const y of YEARS) {
     prod[y] = {}
     for (const a of AGENTS[y]) {
@@ -90,8 +92,9 @@ function deepCloneSeed(): AllData {
     renewal[y] = [...SEED_RENEWAL[y]]
     expenses[y] = emptyYearExpenses()
     expenseCategories[y] = {}
+    hiddenFixed[y] = []
   }
-  return { prod, renewal, expenses, expenseCategories }
+  return { prod, renewal, expenses, expenseCategories, hiddenFixed }
 }
 
 function getAgentProdTotal(data: AllData, year: number, name: string, months?: number): number {
@@ -259,6 +262,7 @@ export default function Home() {
           if (d.renewal[y]) merged.renewal[y] = d.renewal[y]
           if (d.expenses?.[y]) merged.expenses![y] = d.expenses[y]
           if (d.expenseCategories?.[y]) merged.expenseCategories![y] = d.expenseCategories[y]
+          if (d.hiddenFixed?.[y]) merged.hiddenFixed![y] = d.hiddenFixed[y]
         }
         setData(merged)
       } else {
@@ -346,6 +350,38 @@ export default function Home() {
       delete newVar[key]
       yearExp[m] = { ...yearExp[m], variable: newVar }
       const next: AllData = { ...prev, expenses: { ...prev.expenses, [year]: yearExp } }
+      triggerSave(next)
+      return next
+    })
+  }
+
+  function removeFixedItem(key: string) {
+    // Remove from all months for current year and remove from FIXED_ITEMS_HIDDEN tracking
+    setData(prev => {
+      if (!prev) return prev
+      const yearExp = [...(prev.expenses?.[year] || emptyYearExpenses())]
+      yearExp.forEach((_, i) => {
+        const newFixed = { ...yearExp[i].fixed }
+        delete newFixed[key]
+        yearExp[i] = { ...yearExp[i], fixed: newFixed }
+      })
+      const next: AllData = {
+        ...prev,
+        expenses: { ...prev.expenses, [year]: yearExp },
+        hiddenFixed: { ...(prev.hiddenFixed || {}), [year]: [...((prev.hiddenFixed?.[year]) || []).filter(k => k !== key), key] }
+      }
+      triggerSave(next)
+      return next
+    })
+  }
+
+  function restoreFixedItem(key: string) {
+    setData(prev => {
+      if (!prev) return prev
+      const next: AllData = {
+        ...prev,
+        hiddenFixed: { ...(prev.hiddenFixed || {}), [year]: ((prev.hiddenFixed?.[year]) || []).filter(k => k !== key) }
+      }
       triggerSave(next)
       return next
     })
@@ -556,6 +592,7 @@ export default function Home() {
             onUpdateFixed={updateFixedExpense} onUpdateVariable={updateVariableExpense}
             onAddVariable={addVariableItem} onRemoveVariable={removeVariableItem}
             onUpdateCategory={(m, key, cat) => updateCategory(key, cat)}
+            onRemoveFixed={removeFixedItem} onRestoreFixed={restoreFixedItem}
           />
         )}
 
@@ -697,7 +734,7 @@ function CategoriesView({ data, year, onUpdateCategory }: {
   )
 }
 
-function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVariable, onAddVariable, onRemoveVariable, onUpdateCategory }: {
+function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVariable, onAddVariable, onRemoveVariable, onUpdateCategory, onRemoveFixed, onRestoreFixed }: {
   data: AllData
   year: number
   month: number
@@ -707,11 +744,14 @@ function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVari
   onAddVariable: (m: number, name: string) => void
   onRemoveVariable: (m: number, key: string) => void
   onUpdateCategory: (m: number, key: string, cat: string) => void
+  onRemoveFixed: (key: string) => void
+  onRestoreFixed: (key: string) => void
 }) {
   const [newItem, setNewItem] = useState('')
   const yearExp = data.expenses?.[year] || emptyYearExpenses()
   const monthExp = yearExp[month] || emptyMonthlyExpenses()
-  const fixedTotal = getMonthFixedTotal(monthExp)
+  const hiddenFixed = data.hiddenFixed?.[year] || []
+  const fixedTotal = sum(Object.entries(monthExp.fixed).filter(([k]) => !hiddenFixed.includes(k)).map(([,v]) => v || 0))
   const variableTotal = getMonthVariableTotal(monthExp)
   const totalExp = fixedTotal + variableTotal
   const monthIncome = getMonthOR(data, year, month) + ((data.renewal[year] || [])[month] || 0)
@@ -753,28 +793,52 @@ function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVari
                 <tr style={{ background: 'var(--surface2)' }}>
                   <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Item</th>
                   <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Amount</th>
+                  <th style={{ padding: '10px 14px', width: 36, borderBottom: '1px solid var(--border)' }}></th>
                 </tr>
               </thead>
               <tbody>
-                {FIXED_ITEMS.map((item, idx) => (
-                  <tr key={item} style={{ borderBottom: '1px solid var(--border)', background: idx % 2 === 0 ? 'var(--surface)' : 'var(--surface2)' }}>
-                    <td style={{ padding: '8px 14px', fontWeight: 500 }}>{item}</td>
-                    <td style={{ padding: '4px 14px', textAlign: 'right' }}>
-                      <input type="number" min={0} step={0.01}
-                        defaultValue={monthExp.fixed[item] || ''}
-                        placeholder="0"
-                        key={year + '-' + month + '-fixed-' + item}
-                        onChange={e => onUpdateFixed(month, item, e.target.value)}
-                        style={inputStyle}
-                        onFocus={e => e.target.style.borderColor = 'var(--accent)'}
-                        onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-                    </td>
-                  </tr>
-                ))}
+                {(() => {
+                  const hidden = data.hiddenFixed?.[year] || []
+                  const visible = FIXED_ITEMS.filter(i => !hidden.includes(i))
+                  return visible.map((item, idx) => (
+                    <tr key={item} style={{ borderBottom: '1px solid var(--border)', background: idx % 2 === 0 ? 'var(--surface)' : 'var(--surface2)' }}>
+                      <td style={{ padding: '8px 14px', fontWeight: 500 }}>{item}</td>
+                      <td style={{ padding: '4px 14px', textAlign: 'right' }}>
+                        <input type="number" min={0} step={0.01}
+                          defaultValue={monthExp.fixed[item] || ''}
+                          placeholder="0"
+                          key={year + '-' + month + '-fixed-' + item}
+                          onChange={e => onUpdateFixed(month, item, e.target.value)}
+                          style={inputStyle}
+                          onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+                          onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+                      </td>
+                      <td style={{ padding: '8px 8px', textAlign: 'center' }}>
+                        <button onClick={() => onRemoveFixed(item)} title="Hide this item" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 16, lineHeight: 1 }}>x</button>
+                      </td>
+                    </tr>
+                  ))
+                })()}
                 <tr style={{ background: 'var(--red-light)' }}>
                   <td style={{ padding: '10px 14px', fontWeight: 700, color: 'var(--red)' }}>Total fixed</td>
                   <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--red)' }}>{fmt(fixedTotal)}</td>
+                  <td></td>
                 </tr>
+                {(data.hiddenFixed?.[year] || []).length > 0 && (
+                  <tr style={{ background: 'var(--surface2)' }}>
+                    <td colSpan={3} style={{ padding: '8px 14px' }}>
+                      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>Hidden items (click to restore):</div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {(data.hiddenFixed?.[year] || []).map(item => (
+                          <button key={item} onClick={() => onRestoreFixed(item)}
+                            style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--muted)', cursor: 'pointer' }}>
+                            + {item}
+                          </button>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
