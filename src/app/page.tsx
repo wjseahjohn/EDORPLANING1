@@ -35,6 +35,7 @@ const FIXED_ITEMS = [
   "Monthly Family Food Expense",
   "BoxxPark",
   "Silversea Maint. Fee",
+  "SP bill",
 ]
 
 const EXPENSE_CATEGORIES = [
