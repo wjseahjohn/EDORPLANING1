@@ -275,7 +275,7 @@ export default function Home() {
   const yearOR = getYearORTotal(data, year)
   const yearRenewal = getYearRenewalTotal(data, year)
   const yearProd = getYearProdTotal(data, year)
-  const yearGrand = yearOR + yearRenewal
+  const MONTHS.reduce((s,_,i) => s + getMonthOR(data,year,i) + ((data.renewal[year]||[])[i]||0), 0) = yearOR + yearRenewal
   const prevYear = year - 1
   const prevYearExists = YEARS.includes(prevYear)
 
@@ -289,7 +289,7 @@ export default function Home() {
 
   const yearExpenses = data.expenses?.[year] || emptyYearExpenses()
   const yearTotalExpenses = sum(yearExpenses.map(e => getMonthTotalExpenses(e)))
-  const yearNetIncome = yearGrand - yearTotalExpenses
+  const yearNetIncome = MONTHS.reduce((s,_,i) => s + getMonthOR(data,year,i) + ((data.renewal[year]||[])[i]||0), 0) - yearTotalExpenses
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: '24px 16px' }}>
@@ -319,7 +319,7 @@ export default function Home() {
           <MetricCard label="Total production" value={fmt(yearProd)} sub={'All agents ' + year} />
           <MetricCard label="Your overriding" value={fmt(yearOR)} sub={yearProd > 0 ? ((yearOR/yearProd)*100).toFixed(1) + '% of production' : undefined} />
           <MetricCard label="Renewal income" value={fmt(yearRenewal)} sub="Year total" />
-          <MetricCard label="Grand total" value={fmt(yearGrand)} sub="OR + Renewal" highlight />
+          <MetricCard label="Grand total" value={fmt(MONTHS.reduce((s,_,i) => s + getMonthOR(data,year,i) + ((data.renewal[year]||[])[i]||0), 0))} sub="OR + Renewal" highlight />
           <MetricCard label="Total expenses" value={fmt(yearTotalExpenses)} sub="Year total" negative />
           <MetricCard label="Net income" value={fmt(yearNetIncome)} sub="After expenses" highlight={yearNetIncome > 0} negative={yearNetIncome < 0} />
           {prevYearExists && (
@@ -429,7 +429,7 @@ export default function Home() {
                 </tr>
                 <tr style={{ background: 'var(--accent-light)', borderBottom: '1px solid var(--border)' }}>
                   <td colSpan={3} style={{ padding: '10px 14px', fontWeight: 700, color: 'var(--accent)' }}>Grand total (OR + Renewal)</td>
-                  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--accent)', fontSize: 15 }}>{fmt(yearGrand)}</td>
+                  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--accent)', fontSize: 15 }}>{fmt(MONTHS.reduce((s,_,i) => s + getMonthOR(data,year,i) + ((data.renewal[year]||[])[i]||0), 0))}</td>
                 </tr>
                 <tr style={{ background: 'var(--red-light)', borderBottom: '1px solid var(--border)' }}>
                   <td colSpan={3} style={{ padding: '10px 14px', fontWeight: 700, color: 'var(--red)' }}>Total expenses</td>
