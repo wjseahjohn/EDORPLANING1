@@ -11,6 +11,34 @@ import {
 interface AllData {
   prod: Record<number, YearData>
   renewal: Record<number, RenewalData>
+  expenses?: Record<number, MonthlyExpenses[]>
+}
+
+interface MonthlyExpenses {
+  fixed: Record<string, number>
+  variable: Record<string, number>
+}
+
+const FIXED_ITEMS = [
+  "Kayla's school fees",
+  "Khloe's school fees",
+  "Parents allowance",
+  "Mortgage",
+  "Avatr 11",
+  "Taxes",
+  "Jacelyn Salary",
+  "Cynyin's Salary",
+  "Jacelyn's CPF",
+]
+
+function emptyMonthlyExpenses(): MonthlyExpenses {
+  const fixed: Record<string, number> = {}
+  FIXED_ITEMS.forEach(k => { fixed[k] = 0 })
+  return { fixed, variable: {} }
+}
+
+function emptyYearExpenses(): MonthlyExpenses[] {
+  return Array(12).fill(null).map(() => emptyMonthlyExpenses())
 }
 
 async function dbLoad(): Promise<AllData | null> {
@@ -30,14 +58,16 @@ async function dbSave(payload: AllData) {
 function deepCloneSeed(): AllData {
   const prod: Record<number, YearData> = {}
   const renewal: Record<number, RenewalData> = {}
+  const expenses: Record<number, MonthlyExpenses[]> = {}
   for (const y of YEARS) {
     prod[y] = {}
     for (const a of AGENTS[y]) {
       prod[y][a.name] = [...(SEED_PROD[y][a.name] || Array(12).fill(0))]
     }
     renewal[y] = [...SEED_RENEWAL[y]]
+    expenses[y] = emptyYearExpenses()
   }
-  return { prod, renewal }
+  return { prod, renewal, expenses }
 }
 
 function getAgentProdTotal(data: AllData, year: number, name: string, months?: number): number {
@@ -78,6 +108,20 @@ function getActiveMonths(data: AllData, year: number): number {
   return 12
 }
 
+function getMonthTotalExpenses(exp: MonthlyExpenses): number {
+  const f = sum(Object.values(exp.fixed))
+  const v = sum(Object.values(exp.variable))
+  return f + v
+}
+
+function getMonthFixedTotal(exp: MonthlyExpenses): number {
+  return sum(Object.values(exp.fixed))
+}
+
+function getMonthVariableTotal(exp: MonthlyExpenses): number {
+  return sum(Object.values(exp.variable))
+}
+
 function Badge({ value }: { value: number | null }) {
   if (value === null) return <span style={{ fontSize: 12, color: 'var(--muted)' }}>-</span>
   const pos = value >= 0
@@ -93,12 +137,15 @@ function Badge({ value }: { value: number | null }) {
   )
 }
 
-function MetricCard({ label, value, sub, highlight }: { label: string; value: string; sub?: string; highlight?: boolean }) {
+function MetricCard({ label, value, sub, highlight, negative }: { label: string; value: string; sub?: string; highlight?: boolean; negative?: boolean }) {
+  const color = negative ? 'var(--red)' : highlight ? 'var(--accent)' : 'var(--text)'
+  const bg = negative ? 'var(--red-light)' : highlight ? 'var(--accent-light)' : 'var(--surface)'
+  const border = negative ? 'var(--red)' : highlight ? 'var(--accent)' : 'var(--border)'
   return (
-    <div style={{ background: highlight ? 'var(--accent-light)' : 'var(--surface)', border: `1px solid ${highlight ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 10, padding: '14px 16px' }}>
-      <div style={{ fontSize: 11, color: highlight ? 'var(--accent)' : 'var(--muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 600, color: highlight ? 'var(--accent)' : 'var(--text)' }}>{value}</div>
-      {sub && <div style={{ fontSize: 12, color: highlight ? 'var(--accent)' : 'var(--muted)', marginTop: 2 }}>{sub}</div>}
+    <div style={{ background: bg, border: '1px solid ' + border, borderRadius: 10, padding: '14px 16px' }}>
+      <div style={{ fontSize: 11, color: negative ? 'var(--red)' : highlight ? 'var(--accent)' : 'var(--muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 600, color }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: negative ? 'var(--red)' : highlight ? 'var(--accent)' : 'var(--muted)', marginTop: 2 }}>{sub}</div>}
     </div>
   )
 }
@@ -106,7 +153,7 @@ export default function Home() {
   const [data, setData] = useState<AllData | null>(null)
   const [year, setYear] = useState(2026)
   const [month, setMonth] = useState(0)
-  const [view, setView] = useState<'month' | 'annual' | 'yoy' | 'performance'>('month')
+  const [view, setView] = useState<'month' | 'annual' | 'yoy' | 'performance' | 'expenses'>('month')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -122,6 +169,7 @@ export default function Home() {
             if (d.prod[y]?.[a.name]) merged.prod[y][a.name] = d.prod[y][a.name]
           }
           if (d.renewal[y]) merged.renewal[y] = d.renewal[y]
+          if (d.expenses?.[y]) merged.expenses![y] = d.expenses[y]
         }
         setData(merged)
       } else {
@@ -147,8 +195,8 @@ export default function Home() {
     setData(prev => {
       if (!prev) return prev
       const next: AllData = {
+        ...prev,
         prod: { ...prev.prod, [year]: { ...prev.prod[year], [agentName]: prev.prod[year][agentName].map((v, i) => i === m ? (parseFloat(val) || 0) : v) } },
-        renewal: prev.renewal
       }
       triggerSave(next)
       return next
@@ -159,9 +207,56 @@ export default function Home() {
     setData(prev => {
       if (!prev) return prev
       const next: AllData = {
-        prod: prev.prod,
+        ...prev,
         renewal: { ...prev.renewal, [year]: prev.renewal[year].map((v, i) => i === m ? (parseFloat(val) || 0) : v) }
       }
+      triggerSave(next)
+      return next
+    })
+  }
+
+  function updateFixedExpense(m: number, key: string, val: string) {
+    setData(prev => {
+      if (!prev) return prev
+      const yearExp = [...(prev.expenses?.[year] || emptyYearExpenses())]
+      yearExp[m] = { ...yearExp[m], fixed: { ...yearExp[m].fixed, [key]: parseFloat(val) || 0 } }
+      const next: AllData = { ...prev, expenses: { ...prev.expenses, [year]: yearExp } }
+      triggerSave(next)
+      return next
+    })
+  }
+
+  function updateVariableExpense(m: number, key: string, val: string) {
+    setData(prev => {
+      if (!prev) return prev
+      const yearExp = [...(prev.expenses?.[year] || emptyYearExpenses())]
+      yearExp[m] = { ...yearExp[m], variable: { ...yearExp[m].variable, [key]: parseFloat(val) || 0 } }
+      const next: AllData = { ...prev, expenses: { ...prev.expenses, [year]: yearExp } }
+      triggerSave(next)
+      return next
+    })
+  }
+
+  function addVariableItem(m: number, name: string) {
+    if (!name.trim()) return
+    setData(prev => {
+      if (!prev) return prev
+      const yearExp = [...(prev.expenses?.[year] || emptyYearExpenses())]
+      yearExp[m] = { ...yearExp[m], variable: { ...yearExp[m].variable, [name.trim()]: 0 } }
+      const next: AllData = { ...prev, expenses: { ...prev.expenses, [year]: yearExp } }
+      triggerSave(next)
+      return next
+    })
+  }
+
+  function removeVariableItem(m: number, key: string) {
+    setData(prev => {
+      if (!prev) return prev
+      const yearExp = [...(prev.expenses?.[year] || emptyYearExpenses())]
+      const newVar = { ...yearExp[m].variable }
+      delete newVar[key]
+      yearExp[m] = { ...yearExp[m], variable: newVar }
+      const next: AllData = { ...prev, expenses: { ...prev.expenses, [year]: yearExp } }
       triggerSave(next)
       return next
     })
@@ -184,7 +279,6 @@ export default function Home() {
   const prevYear = year - 1
   const prevYearExists = YEARS.includes(prevYear)
 
-  // YTD-matched comparison for summary card
   const ytdOR = getYearORTotal(data, year, year === 2026 ? ytdMonths : undefined)
   const ytdRenewal = getYearRenewalTotal(data, year, year === 2026 ? ytdMonths : undefined)
   const ytdGrand = ytdOR + ytdRenewal
@@ -192,6 +286,10 @@ export default function Home() {
   const prevYtdRenewal = prevYearExists ? getYearRenewalTotal(data, prevYear, year === 2026 ? ytdMonths : undefined) : 0
   const prevYtdGrand = prevYtdOR + prevYtdRenewal
   const ytdPct = pctChange(ytdGrand, prevYtdGrand)
+
+  const yearExpenses = data.expenses?.[year] || emptyYearExpenses()
+  const yearTotalExpenses = sum(yearExpenses.map(e => getMonthTotalExpenses(e)))
+  const yearNetIncome = yearGrand - yearTotalExpenses
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: '24px 16px' }}>
@@ -217,11 +315,13 @@ export default function Home() {
           ))}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 24 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 24 }}>
           <MetricCard label="Total production" value={fmt(yearProd)} sub={'All agents ' + year} />
           <MetricCard label="Your overriding" value={fmt(yearOR)} sub={yearProd > 0 ? ((yearOR/yearProd)*100).toFixed(1) + '% of production' : undefined} />
           <MetricCard label="Renewal income" value={fmt(yearRenewal)} sub="Year total" />
           <MetricCard label="Grand total" value={fmt(yearGrand)} sub="OR + Renewal" highlight />
+          <MetricCard label="Total expenses" value={fmt(yearTotalExpenses)} sub="Year total" negative />
+          <MetricCard label="Net income" value={fmt(yearNetIncome)} sub="After expenses" highlight={yearNetIncome > 0} negative={yearNetIncome < 0} />
           {prevYearExists && (
             <MetricCard
               label={'vs ' + prevYear + (year === 2026 ? ' YTD (' + ytdMonths + 'mo)' : '')}
@@ -231,10 +331,10 @@ export default function Home() {
           )}
         </div>
 
-        <div style={{ display: 'flex', gap: 4, marginBottom: 16, background: 'var(--surface2)', borderRadius: 8, padding: 4, width: 'fit-content' }}>
-          {(['month', 'annual', 'yoy', 'performance'] as const).map(v => (
+        <div style={{ display: 'flex', gap: 4, marginBottom: 16, background: 'var(--surface2)', borderRadius: 8, padding: 4, width: 'fit-content', flexWrap: 'wrap' }}>
+          {(['month', 'annual', 'yoy', 'performance', 'expenses'] as const).map(v => (
             <button key={v} onClick={() => setView(v)} style={{ padding: '5px 14px', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer', border: 'none', background: view === v ? 'var(--surface)' : 'transparent', color: view === v ? 'var(--text)' : 'var(--muted)' }}>
-              {v === 'month' ? 'Monthly input' : v === 'annual' ? 'Annual summary' : v === 'yoy' ? 'Year-on-year' : 'Performance'}
+              {v === 'month' ? 'Monthly input' : v === 'annual' ? 'Annual summary' : v === 'yoy' ? 'Year-on-year' : v === 'performance' ? 'Performance' : 'Expenses'}
             </button>
           ))}
         </div>
@@ -327,9 +427,17 @@ export default function Home() {
                   <td style={{ padding: '9px 14px', textAlign: 'right', color: 'var(--amber)' }}>-</td>
                   <td style={{ padding: '9px 14px', textAlign: 'right', fontWeight: 600, color: 'var(--amber)' }}>{fmt(yearRenewal)}</td>
                 </tr>
-                <tr style={{ background: 'var(--accent-light)' }}>
+                <tr style={{ background: 'var(--accent-light)', borderBottom: '1px solid var(--border)' }}>
                   <td colSpan={3} style={{ padding: '10px 14px', fontWeight: 700, color: 'var(--accent)' }}>Grand total (OR + Renewal)</td>
                   <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--accent)', fontSize: 15 }}>{fmt(yearGrand)}</td>
+                </tr>
+                <tr style={{ background: 'var(--red-light)', borderBottom: '1px solid var(--border)' }}>
+                  <td colSpan={3} style={{ padding: '10px 14px', fontWeight: 700, color: 'var(--red)' }}>Total expenses</td>
+                  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--red)' }}>-{fmt(yearTotalExpenses)}</td>
+                </tr>
+                <tr style={{ background: yearNetIncome >= 0 ? 'var(--green-light)' : 'var(--red-light)' }}>
+                  <td colSpan={3} style={{ padding: '10px 14px', fontWeight: 700, color: yearNetIncome >= 0 ? 'var(--green)' : 'var(--red)' }}>Net income</td>
+                  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: yearNetIncome >= 0 ? 'var(--green)' : 'var(--red)', fontSize: 15 }}>{fmt(yearNetIncome)}</td>
                 </tr>
               </tbody>
             </table>
@@ -338,6 +446,218 @@ export default function Home() {
 
         {view === 'yoy' && <YoYView data={data} />}
         {view === 'performance' && <PerformanceView data={data} />}
+        {view === 'expenses' && (
+          <ExpensesView
+            data={data}
+            year={year}
+            month={month}
+            setMonth={setMonth}
+            onUpdateFixed={updateFixedExpense}
+            onUpdateVariable={updateVariableExpense}
+            onAddVariable={addVariableItem}
+            onRemoveVariable={removeVariableItem}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+function ExpensesView({ data, year, month, setMonth, onUpdateFixed, onUpdateVariable, onAddVariable, onRemoveVariable }: {
+  data: AllData
+  year: number
+  month: number
+  setMonth: (m: number) => void
+  onUpdateFixed: (m: number, key: string, val: string) => void
+  onUpdateVariable: (m: number, key: string, val: string) => void
+  onAddVariable: (m: number, name: string) => void
+  onRemoveVariable: (m: number, key: string) => void
+}) {
+  const [newItem, setNewItem] = useState('')
+  const yearExp = data.expenses?.[year] || emptyYearExpenses()
+  const monthExp = yearExp[month] || emptyMonthlyExpenses()
+  const fixedTotal = getMonthFixedTotal(monthExp)
+  const variableTotal = getMonthVariableTotal(monthExp)
+  const totalExp = fixedTotal + variableTotal
+  const monthIncome = getMonthOR(data, year, month) + ((data.renewal[year] || [])[month] || 0)
+  const netIncome = monthIncome - totalExp
+
+  const inputStyle = {
+    width: '130px', textAlign: 'right' as const, padding: '5px 8px',
+    border: '1px solid var(--border)', borderRadius: 6,
+    background: 'var(--surface)', color: 'var(--text)', fontSize: 13, outline: 'none'
+  }
+
+  return (
+    <div>
+      {/* Month selector */}
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 20 }}>
+        {MONTHS.map((m, i) => (
+          <button key={m} onClick={() => setMonth(i)} style={{ padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer', border: i === month ? '1px solid var(--accent)' : '1px solid var(--border)', background: i === month ? 'var(--accent-light)' : 'var(--surface)', color: i === month ? 'var(--accent)' : 'var(--muted)' }}>
+            {m}
+          </button>
+        ))}
+      </div>
+
+      {/* Month summary cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 20 }}>
+        <MetricCard label={MONTHS[month] + ' income'} value={fmt(monthIncome)} sub="OR + Renewal" highlight />
+        <MetricCard label="Fixed expenses" value={fmt(fixedTotal)} sub={MONTHS[month]} negative />
+        <MetricCard label="Variable expenses" value={fmt(variableTotal)} sub={MONTHS[month]} negative />
+        <MetricCard label="Total expenses" value={fmt(totalExp)} sub={MONTHS[month]} negative />
+        <MetricCard label="Net income" value={fmt(netIncome)} sub={MONTHS[month]} highlight={netIncome >= 0} negative={netIncome < 0} />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+
+        {/* Fixed expenses */}
+        <div>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 10 }}>Fixed expenses</p>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: 'var(--surface2)' }}>
+                  <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Item</th>
+                  <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {FIXED_ITEMS.map((item, idx) => (
+                  <tr key={item} style={{ borderBottom: '1px solid var(--border)', background: idx % 2 === 0 ? 'var(--surface)' : 'var(--surface2)' }}>
+                    <td style={{ padding: '8px 14px', fontWeight: 500 }}>{item}</td>
+                    <td style={{ padding: '4px 14px', textAlign: 'right' }}>
+                      <input
+                        type="number" min={0} step={0.01}
+                        defaultValue={monthExp.fixed[item] || ''}
+                        placeholder="0"
+                        key={year + '-' + month + '-fixed-' + item}
+                        onChange={e => onUpdateFixed(month, item, e.target.value)}
+                        style={inputStyle}
+                        onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+                        onBlur={e => e.target.style.borderColor = 'var(--border)'}
+                      />
+                    </td>
+                  </tr>
+                ))}
+                <tr style={{ background: 'var(--red-light)' }}>
+                  <td style={{ padding: '10px 14px', fontWeight: 700, color: 'var(--red)' }}>Total fixed</td>
+                  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--red)' }}>{fmt(fixedTotal)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Variable expenses */}
+        <div>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 10 }}>Variable expenses</p>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', marginBottom: 10 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: 'var(--surface2)' }}>
+                  <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Item</th>
+                  <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Amount</th>
+                  <th style={{ padding: '10px 14px', width: 36, borderBottom: '1px solid var(--border)' }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.keys(monthExp.variable).length === 0 && (
+                  <tr>
+                    <td colSpan={3} style={{ padding: '16px 14px', textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>No variable expenses yet — add one below</td>
+                  </tr>
+                )}
+                {Object.entries(monthExp.variable).map(([key, val], idx) => (
+                  <tr key={key} style={{ borderBottom: '1px solid var(--border)', background: idx % 2 === 0 ? 'var(--surface)' : 'var(--surface2)' }}>
+                    <td style={{ padding: '8px 14px', fontWeight: 500 }}>{key}</td>
+                    <td style={{ padding: '4px 14px', textAlign: 'right' }}>
+                      <input
+                        type="number" min={0} step={0.01}
+                        defaultValue={val || ''}
+                        placeholder="0"
+                        key={year + '-' + month + '-var-' + key}
+                        onChange={e => onUpdateVariable(month, key, e.target.value)}
+                        style={inputStyle}
+                        onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+                        onBlur={e => e.target.style.borderColor = 'var(--border)'}
+                      />
+                    </td>
+                    <td style={{ padding: '8px 8px', textAlign: 'center' }}>
+                      <button onClick={() => onRemoveVariable(month, key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 16, lineHeight: 1 }}>×</button>
+                    </td>
+                  </tr>
+                ))}
+                <tr style={{ background: 'var(--red-light)' }}>
+                  <td style={{ padding: '10px 14px', fontWeight: 700, color: 'var(--red)' }}>Total variable</td>
+                  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--red)' }}>{fmt(variableTotal)}</td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          {/* Add variable item */}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              type="text"
+              value={newItem}
+              onChange={e => setNewItem(e.target.value)}
+              placeholder="Add variable expense..."
+              onKeyDown={e => { if (e.key === 'Enter') { onAddVariable(month, newItem); setNewItem('') } }}
+              style={{ flex: 1, padding: '7px 10px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--surface)', color: 'var(--text)', fontSize: 13, outline: 'none' }}
+            />
+            <button
+              onClick={() => { onAddVariable(month, newItem); setNewItem('') }}
+              style={{ padding: '7px 16px', borderRadius: 6, border: '1px solid var(--accent)', background: 'var(--accent)', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Annual expenses summary */}
+      <div style={{ marginTop: 24 }}>
+        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 10 }}>Annual expenses summary</p>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: 'var(--surface2)' }}>
+                <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Month</th>
+                <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Income</th>
+                <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Fixed</th>
+                <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Variable</th>
+                <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Total exp</th>
+                <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>Net income</th>
+              </tr>
+            </thead>
+            <tbody>
+              {MONTHS.map((m, i) => {
+                const exp = yearExp[i] || emptyMonthlyExpenses()
+                const inc = getMonthOR(data, year, i) + ((data.renewal[year] || [])[i] || 0)
+                const fx = getMonthFixedTotal(exp)
+                const vr = getMonthVariableTotal(exp)
+                const tot = fx + vr
+                const net = inc - tot
+                return (
+                  <tr key={m} style={{ borderBottom: '1px solid var(--border)', background: i % 2 === 0 ? 'var(--surface)' : 'var(--surface2)', cursor: 'pointer' }} onClick={() => setMonth(i)}>
+                    <td style={{ padding: '8px 14px', fontWeight: 500 }}>{m}</td>
+                    <td style={{ padding: '8px 14px', textAlign: 'right' }}>{inc > 0 ? fmt(inc) : '-'}</td>
+                    <td style={{ padding: '8px 14px', textAlign: 'right', color: fx > 0 ? 'var(--red)' : 'var(--muted)' }}>{fx > 0 ? fmt(fx) : '-'}</td>
+                    <td style={{ padding: '8px 14px', textAlign: 'right', color: vr > 0 ? 'var(--red)' : 'var(--muted)' }}>{vr > 0 ? fmt(vr) : '-'}</td>
+                    <td style={{ padding: '8px 14px', textAlign: 'right', color: tot > 0 ? 'var(--red)' : 'var(--muted)' }}>{tot > 0 ? fmt(tot) : '-'}</td>
+                    <td style={{ padding: '8px 14px', textAlign: 'right', fontWeight: 500, color: net > 0 ? 'var(--green)' : net < 0 ? 'var(--red)' : 'var(--muted)' }}>{inc > 0 || tot > 0 ? fmt(net) : '-'}</td>
+                  </tr>
+                )
+              })}
+              <tr style={{ background: 'var(--surface2)', borderTop: '2px solid var(--border)' }}>
+                <td style={{ padding: '10px 14px', fontWeight: 700 }}>Year total</td>
+                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700 }}>{fmt(yearGrand)}</td>
+                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--red)' }}>{fmt(sum(yearExp.map(e => getMonthFixedTotal(e))))}</td>
+                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--red)' }}>{fmt(sum(yearExp.map(e => getMonthVariableTotal(e))))}</td>
+                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--red)' }}>{fmt(yearTotalExpenses)}</td>
+                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: yearNetIncome >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt(yearNetIncome)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )
@@ -418,8 +738,6 @@ function YoYView({ data }: { data: AllData }) {
 function PerformanceView({ data }: { data: AllData }) {
   const ytdMonths = getActiveMonths(data, 2026)
   const allNames = Array.from(new Set(YEARS.flatMap(y => AGENTS[y].map(a => a.name))))
-
-  // Grand total income YoY (OR + Renewal), YTD matched
   const incomeRows = YEARS.slice(1).map((y, i) => {
     const prevY = YEARS[i]
     const months = y === 2026 ? ytdMonths : undefined
@@ -431,11 +749,8 @@ function PerformanceView({ data }: { data: AllData }) {
     const prevGrand = prevOR + prevRen
     return { label: prevY + ' vs ' + y + (y===2026?' YTD ('+ytdMonths+'mo)':''), prevGrand, currGrand, pct: pctChange(currGrand, prevGrand) }
   })
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-
-      {/* My income performance */}
       <div>
         <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 10 }}>My grand total income (OR + Renewal)</p>
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
@@ -465,8 +780,6 @@ function PerformanceView({ data }: { data: AllData }) {
           </table>
         </div>
       </div>
-
-      {/* Manager production performance */}
       <div>
         <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>Manager production — year on year</p>
         <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>25 vs 26 compares Jan-{MONTHS[ytdMonths-1]} only (same {ytdMonths} months)</p>
@@ -512,7 +825,6 @@ function PerformanceView({ data }: { data: AllData }) {
           </table>
         </div>
       </div>
-
     </div>
   )
 }
