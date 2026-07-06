@@ -35,7 +35,6 @@ const FIXED_ITEMS = [
   "Monthly Family Food Expense",
   "BoxxPark",
   "Silversea Maint. Fee",
-  "SP bill",
 ]
 
 const EXPENSE_CATEGORIES = [
@@ -44,6 +43,7 @@ const EXPENSE_CATEGORIES = [
   'Seminar Selling',
   'TLDR',
   'Personal Expenses',
+  'Management',
 ]
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -52,6 +52,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   'Seminar Selling':   '#d97706',
   'TLDR':              '#7c3aed',
   'Personal Expenses': '#dc2626',
+  'Management':        '#0891b2',
   'Uncategorised':     '#9ca3af',
 }
 
